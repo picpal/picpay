@@ -1,5 +1,6 @@
 package com.picpay.token.service;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.picpay.token.crypto.VaultService;
 import com.picpay.token.domain.CardToken;
 import com.picpay.token.dto.CardTokenResponse;
@@ -10,6 +11,10 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.ValueOperations;
+
+import java.time.Duration;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -25,12 +30,16 @@ class CardTokenServiceTest {
     private VaultService vaultService;
     @Mock
     private CardTokenRepository cardTokenRepository;
+    @Mock
+    private StringRedisTemplate redisTemplate;
+    @Mock
+    private ValueOperations<String, String> valueOps;
 
     private CardTokenService cardTokenService;
 
     @BeforeEach
     void setUp() {
-        cardTokenService = new CardTokenService(vaultService, cardTokenRepository);
+        cardTokenService = new CardTokenService(vaultService, cardTokenRepository, redisTemplate, new ObjectMapper());
     }
 
     @Test
@@ -61,5 +70,34 @@ class CardTokenServiceTest {
 
         // cardNumber와 cardExpiry만 암호화, CVC("123")는 encrypt 호출 없음
         verify(vaultService, never()).encrypt("123");
+    }
+
+    @Test
+    void 토큰_조회_시_캐시_히트면_DB_조회_안함() throws Exception {
+        String tokenId = "tok_abc";
+        String cached = """
+                {"tokenId":"tok_abc","merchantId":"mer_001","cardLastFour":"1111","status":"ACTIVE"}
+                """;
+        given(redisTemplate.opsForValue()).willReturn(valueOps);
+        given(valueOps.get("token:tok_abc")).willReturn(cached);
+
+        CardTokenResponse result = cardTokenService.findByTokenId(tokenId);
+
+        assertThat(result.tokenId()).isEqualTo("tok_abc");
+        verify(cardTokenRepository, never()).findByTokenId(anyString());
+    }
+
+    @Test
+    void 토큰_조회_캐시_미스_시_DB_조회_후_캐시_저장() {
+        String tokenId = "tok_abc";
+        CardToken token = CardToken.create("tok_abc", "mer_001", "enc_num", "enc_exp", "1111");
+        given(redisTemplate.opsForValue()).willReturn(valueOps);
+        given(valueOps.get("token:tok_abc")).willReturn(null);
+        given(cardTokenRepository.findByTokenId("tok_abc")).willReturn(java.util.Optional.of(token));
+
+        CardTokenResponse result = cardTokenService.findByTokenId(tokenId);
+
+        assertThat(result.cardLastFour()).isEqualTo("1111");
+        verify(valueOps).set(anyString(), anyString(), any(Duration.class));
     }
 }
