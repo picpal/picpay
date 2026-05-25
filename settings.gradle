@@ -1,0 +1,12 @@
+plugins {
+    id 'org.gradle.toolchains.foojay-resolver-convention' version '0.8.0'
+}
+
+rootProject.name = 'picpay'
+
+include 'common'
+include 'services:gateway'
+include 'services:payment'
+include 'services:billing'
+include 'services:token'
+include 'services:notification'
