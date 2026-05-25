@@ -4,6 +4,19 @@ spring:
   threads:
     virtual:
       enabled: true
+  datasource:
+    url: jdbc:postgresql://localhost:5432/picpay?currentSchema=token
+    username: picpay
+    password: picpay
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        default_schema: token
+  flyway:
+    enabled: false
 
 server:
   port: 8083
