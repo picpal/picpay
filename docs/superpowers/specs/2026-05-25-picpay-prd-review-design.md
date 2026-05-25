@@ -172,34 +172,38 @@ services:
 
 ```bash
 #!/bin/bash
-# start-ec2.sh — EC2 시작 후 IP 자동 갱신
+# start-ec2.sh — EC2-A/B 시작 후 IP 자동 갱신
 
-INSTANCE_ID="i-xxxxxxxxxxxxxxxxx"   # EC2-A Instance ID
-SSH_CONFIG_HOST="picpay-was"
+EC2_A_ID="i-xxxxxxxxxxxxxxxxx"   # WAS 서버 Instance ID
+EC2_B_ID="i-yyyyyyyyyyyyyyyyy"   # 미들웨어 서버 Instance ID
+REGION="ap-northeast-2"
 
-# EC2 시작
-echo "Starting EC2..."
-aws ec2 start-instances --instance-ids $INSTANCE_ID --region ap-northeast-2
+# EC2-A, EC2-B 동시 시작
+echo "Starting EC2-A (WAS) and EC2-B (middleware)..."
+aws ec2 start-instances --instance-ids $EC2_A_ID $EC2_B_ID --region $REGION
 
 # 실행 대기
-aws ec2 wait instance-running --instance-ids $INSTANCE_ID --region ap-northeast-2
+aws ec2 wait instance-running --instance-ids $EC2_A_ID $EC2_B_ID --region $REGION
 
-# Public IP 획득
+# EC2-A Public IP 획득 (외부 접속용)
 PUBLIC_IP=$(aws ec2 describe-instances \
-  --instance-ids $INSTANCE_ID \
-  --region ap-northeast-2 \
+  --instance-ids $EC2_A_ID \
+  --region $REGION \
   --query 'Reservations[0].Instances[0].PublicIpAddress' \
   --output text)
 
-echo "EC2 IP: $PUBLIC_IP"
+# EC2-B는 같은 VPC 내 Private IP 사용 → Stop/Start해도 변경 안 됨
+# Spring Boot 서비스의 Kafka/Redis 연결은 Private IP로 고정 설정 가능
 
-# SSH config 자동 갱신
+echo "EC2-A Public IP: $PUBLIC_IP"
+
+# SSH config 자동 갱신 (EC2-A만 Public 접속)
 sed -i '' "s/HostName .*/HostName $PUBLIC_IP/" ~/.ssh/config
 
 # GitHub Actions Secret 갱신 (gh CLI 필요)
 gh secret set EC2_HOST --body "$PUBLIC_IP" --repo picpal/picpay
 
-echo "Done. Connect: ssh $SSH_CONFIG_HOST"
+echo "Done. Connect: ssh picpay-was"
 ```
 
 ### ~/.ssh/config 예시
@@ -220,19 +224,70 @@ Host picpay-was
 - **평소 (개발/디버깅):** ALB 없음 → `http://{EC2-A IP}:8080` 직접 접속
 - **부하 테스트 시:** ALB 생성 → k6 실행 → ALB 즉시 삭제
 
+### Security Group 조정 필요 (ALB 없는 개발 환경)
+
+현재 PRD의 `sg-was`는 `sg-alb`에서만 8080-8084 허용으로 설계되어 있음.
+ALB 없이 직접 접속하려면 개발 환경 전용 인바운드 규칙 추가 필요.
+
+```
+sg-was 추가 규칙 (개발 시에만):
+  포트: 8080
+  소스: 내 IP (개발자 공인 IP)
+  목적: ALB 없이 API Gateway 직접 접속
+
+부하 테스트 시:
+  위 규칙 제거 → ALB(sg-alb)를 통해서만 접근
+```
+
+> 내 IP는 `curl ifconfig.me`로 확인. EC2 Console → Security Group → Inbound Rules에서 수동 관리.
+
 ### alb-create.sh / alb-delete.sh (신규 추가)
 
 ```bash
 # alb-create.sh
-aws elbv2 create-load-balancer \
-  --name picpay-alb \
-  --subnets subnet-xxx \
-  --security-groups sg-alb \
-  --type application \
-  --region ap-northeast-2
+REGION="ap-northeast-2"
+VPC_ID="vpc-xxx"
+SUBNET_ID="subnet-xxx"     # Public Subnet ID
+SG_ALB="sg-xxx"            # sg-alb Security Group ID
+EC2_A_ID="i-xxx"           # EC2-A Instance ID
 
-# 대상 그룹 + 리스너 등록 (별도 스크립트 또는 Terraform)
+# 1. ALB 생성
+ALB_ARN=$(aws elbv2 create-load-balancer \
+  --name picpay-alb \
+  --subnets $SUBNET_ID \
+  --security-groups $SG_ALB \
+  --type application \
+  --region $REGION \
+  --query 'LoadBalancers[0].LoadBalancerArn' \
+  --output text)
+
+# 2. Target Group 생성 (API Gateway :8080)
+TG_ARN=$(aws elbv2 create-target-group \
+  --name picpay-tg \
+  --protocol HTTP \
+  --port 8080 \
+  --vpc-id $VPC_ID \
+  --health-check-path /actuator/health \
+  --region $REGION \
+  --query 'TargetGroups[0].TargetGroupArn' \
+  --output text)
+
+# 3. EC2-A를 Target Group에 등록
+aws elbv2 register-targets \
+  --target-group-arn $TG_ARN \
+  --targets Id=$EC2_A_ID \
+  --region $REGION
+
+# 4. Listener 생성 (HTTP:80 → Target Group)
+aws elbv2 create-listener \
+  --load-balancer-arn $ALB_ARN \
+  --protocol HTTP \
+  --port 80 \
+  --default-actions Type=forward,TargetGroupArn=$TG_ARN \
+  --region $REGION
+
 echo "ALB 생성 완료. 부하 테스트 후 반드시 alb-delete.sh 실행!"
+echo "ALB ARN: $ALB_ARN"
 ```
 
 ```bash
@@ -275,10 +330,14 @@ echo "ALB 삭제 완료."
 ### Sprint 1 추가 태스크
 
 ```
-- [ ] EC2 t3.micro 메모리 검증
-      (5개 서비스 동시 기동 → free -m → available > 50MB)
-      실패 시 → t3.small 전환 결정 후 PRD 비용 표 업데이트
+- [ ] 로컬 Docker Compose에서 메모리 프로파일링
+      (5개 서비스 동시 기동 → docker stats → 전체 사용량 확인)
+      EC2 t3.micro 1GB 내 수용 가능 여부 사전 판단
+      실패 예상 시 → Sprint 4 시작 전 t3.small 전환 결정
 ```
+
+> Sprint 1은 로컬(Docker Compose) 단계. EC2 실제 검증은 Sprint 4에서 수행.
+> 로컬에서 docker stats로 메모리 총합이 750MB 초과 시 t3.small 전환 검토.
 
 ### Sprint 4 변경 태스크
 
