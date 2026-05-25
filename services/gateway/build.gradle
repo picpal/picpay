@@ -2,10 +2,6 @@ plugins {
     id 'org.springframework.boot'
 }
 
-ext {
-    springCloudVersion = '2024.0.0'
-}
-
 dependencies {
     implementation(project(':common')) {
         exclude group: 'org.springframework.boot', module: 'spring-boot-starter-web'
