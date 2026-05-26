@@ -36,9 +36,7 @@ public class TidService {
     private String generateSeq(String seqKey) {
         try {
             Long seq = redisTemplate.opsForValue().increment(seqKey);
-            if (seq == 1L) {
-                redisTemplate.expire(seqKey, Duration.ofDays(2));
-            }
+            redisTemplate.expire(seqKey, Duration.ofDays(2));
             return String.format("%08d", seq);
         } catch (Exception e) {
             log.warn("Redis TID seq unavailable, falling back to UUID: {}", e.getMessage());
