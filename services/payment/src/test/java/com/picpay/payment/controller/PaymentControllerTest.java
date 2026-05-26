@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.picpay.common.exception.BusinessException;
 import com.picpay.common.exception.ErrorCode;
 import com.picpay.common.exception.GlobalExceptionHandler;
+import com.picpay.payment.dto.CancelRequest;
+import com.picpay.payment.dto.CancelResponse;
 import com.picpay.payment.dto.PaymentRequest;
 import com.picpay.payment.dto.PaymentResponse;
 import com.picpay.payment.service.PaymentService;
@@ -66,5 +68,32 @@ class PaymentControllerTest {
 
         mockMvc.perform(get("/v1/payments/unknown-tid"))
                 .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void post_cancel_returns200_withCancelResponse() throws Exception {
+        CancelResponse cancelResponse = new CancelResponse(
+                "CTSVR01tid001", "CANCELLED", 3000L, 7000L, "부분취소");
+        when(paymentService.cancel(any())).thenReturn(cancelResponse);
+
+        CancelRequest request = new CancelRequest("TSVR01tid001", 3000L, "부분취소");
+
+        mockMvc.perform(post("/v1/payments/cancel")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.remainingAmount").value(7000));
+    }
+
+    @Test
+    void post_cancel_missingTid_returns400() throws Exception {
+        String body = """
+                {"cancelAmount":3000}
+                """;
+
+        mockMvc.perform(post("/v1/payments/cancel")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isBadRequest());
     }
 }

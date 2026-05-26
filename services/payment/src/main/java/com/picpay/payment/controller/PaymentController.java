@@ -1,6 +1,8 @@
 package com.picpay.payment.controller;
 
 import com.picpay.common.response.ApiResponse;
+import com.picpay.payment.dto.CancelRequest;
+import com.picpay.payment.dto.CancelResponse;
 import com.picpay.payment.dto.PaymentRequest;
 import com.picpay.payment.dto.PaymentResponse;
 import com.picpay.payment.service.PaymentService;
@@ -27,5 +29,10 @@ public class PaymentController {
     @GetMapping("/{tid}")
     public ApiResponse<PaymentResponse> findByTid(@PathVariable String tid) {
         return ApiResponse.ok(paymentService.findByTid(tid));
+    }
+
+    @PostMapping("/cancel")
+    public ApiResponse<CancelResponse> cancel(@Valid @RequestBody CancelRequest request) {
+        return ApiResponse.ok(paymentService.cancel(request));
     }
 }
