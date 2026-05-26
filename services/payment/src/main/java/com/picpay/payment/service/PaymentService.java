@@ -112,7 +112,7 @@ public class PaymentService {
 
     @Transactional
     public CancelResponse cancel(CancelRequest request) {
-        Payment payment = paymentRepository.findByTid(request.tid())
+        Payment payment = paymentRepository.findByTidWithLock(request.tid())
                 .orElseThrow(() -> new BusinessException(ErrorCode.PAYMENT_NOT_FOUND));
 
         List<PartialCancellation> existing = partialCancellationRepository.findByPaymentId(payment.getId());

@@ -141,7 +141,7 @@ class PaymentServiceTest {
                 "tok_abc", 10000L, "CARD", null);
         payment.approve("PG-001");
 
-        when(paymentRepository.findByTid("TSVR01tid001")).thenReturn(Optional.of(payment));
+        when(paymentRepository.findByTidWithLock("TSVR01tid001")).thenReturn(Optional.of(payment));
         when(partialCancellationRepository.findByPaymentId(any())).thenReturn(List.of());
         when(mockPgClient.cancel(anyString(), anyLong()))
                 .thenReturn(MockPgClient.PgApprovalResult.success("PGC-001"));
@@ -163,7 +163,7 @@ class PaymentServiceTest {
                 "tok_abc", 10000L, "CARD", null);
         payment.approve("PG-002");
 
-        when(paymentRepository.findByTid("TSVR01tid002")).thenReturn(Optional.of(payment));
+        when(paymentRepository.findByTidWithLock("TSVR01tid002")).thenReturn(Optional.of(payment));
         when(partialCancellationRepository.findByPaymentId(any())).thenReturn(List.of());
         when(mockPgClient.cancel(anyString(), anyLong()))
                 .thenReturn(MockPgClient.PgApprovalResult.success("PGC-002"));
