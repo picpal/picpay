@@ -2,17 +2,16 @@ package com.picpay.payment.pg;
 
 import org.springframework.stereotype.Component;
 
-import java.util.Random;
 import java.util.UUID;
+import java.util.concurrent.ThreadLocalRandom;
 
 @Component
 public class MockPgClient {
 
     private static final double APPROVAL_RATE = 0.95;
-    private final Random random = new Random();
 
     public PgApprovalResult approve(String tid, Long amount) {
-        if (random.nextDouble() < APPROVAL_RATE) {
+        if (ThreadLocalRandom.current().nextDouble() < APPROVAL_RATE) {
             return PgApprovalResult.success("PG-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase());
         }
         return PgApprovalResult.failure("PG_DECLINED");

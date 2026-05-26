@@ -27,7 +27,8 @@ public class OutboxEvent {
     private String payload;
 
     @Column(name = "status", nullable = false)
-    private String status = "PENDING";
+    @Enumerated(EnumType.STRING)
+    private OutboxStatus status = OutboxStatus.PENDING;
 
     @Column(name = "retry_count", nullable = false)
     private int retryCount = 0;
@@ -58,14 +59,14 @@ public class OutboxEvent {
     }
 
     public void markPublished() {
-        this.status = "PUBLISHED";
+        this.status = OutboxStatus.PUBLISHED;
         this.publishedAt = LocalDateTime.now();
     }
 
     public void markFailed(String error) {
         this.retryCount++;
         this.lastError = error;
-        this.status = retryCount >= maxRetry ? "DEAD" : "FAILED";
+        this.status = retryCount >= maxRetry ? OutboxStatus.DEAD : OutboxStatus.FAILED;
     }
 
     public Long getId() { return id; }
@@ -74,7 +75,7 @@ public class OutboxEvent {
     public String getEventType() { return eventType; }
     public String getTopic() { return topic; }
     public String getPayload() { return payload; }
-    public String getStatus() { return status; }
+    public OutboxStatus getStatus() { return status; }
     public int getRetryCount() { return retryCount; }
     public int getMaxRetry() { return maxRetry; }
     public String getLastError() { return lastError; }
