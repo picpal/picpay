@@ -71,10 +71,7 @@ public class Payment extends BaseEntity {
     }
 
     public void partialCancel() {
-        if (this.status != PaymentStatus.PAID && this.status != PaymentStatus.PARTIAL_CANCELLED) {
-            throw new BusinessException(ErrorCode.INVALID_STATUS_TRANSITION);
-        }
-        this.status = PaymentStatus.PARTIAL_CANCELLED;
+        transitionTo(PaymentStatus.PARTIAL_CANCELLED);
     }
 
     private void transitionTo(PaymentStatus next) {
