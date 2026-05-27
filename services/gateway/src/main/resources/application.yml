@@ -2,9 +2,9 @@ spring:
   application:
     name: gateway-service
   r2dbc:
-    url: r2dbc:postgresql://localhost:5432/picpay
-    username: picpay
-    password: picpay
+    url: ${DB_URL:r2dbc:postgresql://localhost:5432/picpay}
+    username: ${DB_USERNAME:picpay}
+    password: ${DB_PASSWORD:picpay}
   flyway:
     enabled: false
   data:

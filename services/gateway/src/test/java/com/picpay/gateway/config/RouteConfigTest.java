@@ -52,5 +52,13 @@ class RouteConfigTest {
     void shouldHaveThreeRoutes() {
         List<Route> routes = routeLocator.getRoutes().collectList().block();
         assertThat(routes).isNotNull().hasSize(3);
+
+        // verify route IDs
+        List<String> ids = routes.stream().map(r -> r.getId()).collect(java.util.stream.Collectors.toList());
+        assertThat(ids).containsExactlyInAnyOrder("payment", "billing", "token");
+
+        // verify URIs
+        List<String> uris = routes.stream().map(r -> r.getUri().toString()).collect(java.util.stream.Collectors.toList());
+        assertThat(uris).containsExactlyInAnyOrder("http://localhost:8081", "http://localhost:8082", "http://localhost:8083");
     }
 }
