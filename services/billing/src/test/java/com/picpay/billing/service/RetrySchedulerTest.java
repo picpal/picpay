@@ -12,6 +12,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.redisson.api.RedissonClient;
 
 import java.time.LocalDateTime;
 import java.util.Optional;
@@ -28,6 +29,7 @@ class RetrySchedulerTest {
     @Mock BillingPlanRepository billingPlanRepository;
     @Mock BillingHistoryRepository billingHistoryRepository;
     @Mock PaymentClient paymentClient;
+    @Mock RedissonClient redissonClient;
     @InjectMocks RetryScheduler retryScheduler;
 
     @Test
@@ -87,5 +89,18 @@ class RetrySchedulerTest {
         assertThat(job.getStatus()).isEqualTo(RetryStatus.DEAD);
         assertThat(plan.getStatus()).isEqualTo(BillingStatus.PAUSED);
         verify(billingHistoryRepository).save(argThat(h -> "FAILED".equals(h.getStatus())));
+    }
+
+    @Test
+    void processRetryJob_planNotFound_marksJobDead() {
+        BillingRetryJob job = BillingRetryJob.create("BP-999", "previous error");
+
+        when(billingPlanRepository.findByPlanId("BP-999")).thenReturn(Optional.empty());
+        when(billingRetryJobRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        retryScheduler.processRetryJob(job);
+
+        assertThat(job.getStatus()).isEqualTo(RetryStatus.DEAD);
+        verifyNoInteractions(paymentClient);
     }
 }
