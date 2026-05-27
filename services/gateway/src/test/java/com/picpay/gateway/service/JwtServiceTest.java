@@ -58,4 +58,13 @@ class JwtServiceTest {
         assertThatThrownBy(() -> jwtService.validate(tamperedToken))
             .isInstanceOf(JwtException.class);
     }
+
+    @Test
+    void validate_shouldThrowOnExpiredToken() throws InterruptedException {
+        JwtService shortLivedService = new JwtService(TEST_SECRET, 1L); // 1ms expiry
+        String token = shortLivedService.generate("mer_001");
+        Thread.sleep(5); // ensure expiry
+        assertThatThrownBy(() -> shortLivedService.validate(token))
+            .isInstanceOf(JwtException.class);
+    }
 }

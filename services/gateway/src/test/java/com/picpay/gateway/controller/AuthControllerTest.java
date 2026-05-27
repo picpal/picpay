@@ -1,5 +1,6 @@
 package com.picpay.gateway.controller;
 
+import com.picpay.gateway.exception.UnauthorizedException;
 import com.picpay.gateway.service.AuthService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -37,7 +38,7 @@ class AuthControllerTest {
     @Test
     void getToken_shouldReturn401_whenApiKeyIsInvalid() {
         when(authService.authenticate("invalid-key"))
-            .thenReturn(Mono.error(new RuntimeException("Invalid API key")));
+            .thenReturn(Mono.error(new UnauthorizedException("Invalid API key")));
 
         webTestClient.post()
             .uri("/v1/auth/token")

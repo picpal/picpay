@@ -47,6 +47,9 @@ public class JwtAuthFilter implements GlobalFilter, Ordered {
         try {
             Claims claims = jwtService.validate(token);
             String merchantId = claims.get("merchantId", String.class);
+            if (merchantId == null) {
+                return writeError(exchange, HttpStatus.UNAUTHORIZED, "UNAUTHORIZED", "Authentication failed");
+            }
             ServerHttpRequest mutatedRequest = exchange.getRequest().mutate()
                 .header("X-Merchant-Id", merchantId)
                 .build();

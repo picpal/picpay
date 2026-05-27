@@ -1,5 +1,6 @@
 package com.picpay.gateway.service;
 
+import com.picpay.gateway.exception.UnauthorizedException;
 import com.picpay.gateway.repository.MerchantRepository;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
@@ -19,6 +20,6 @@ public class AuthService {
         return merchantRepository.findByApiKey(apiKey)
             .filter(m -> "ACTIVE".equals(m.getStatus()))
             .map(m -> jwtService.generate(m.getMerchantId()))
-            .switchIfEmpty(Mono.error(new RuntimeException("Invalid API key")));
+            .switchIfEmpty(Mono.error(new UnauthorizedException("Invalid API key")));
     }
 }

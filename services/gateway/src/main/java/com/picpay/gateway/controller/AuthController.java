@@ -1,7 +1,9 @@
 package com.picpay.gateway.controller;
 
 import com.picpay.common.response.ApiResponse;
+import com.picpay.gateway.exception.UnauthorizedException;
 import com.picpay.gateway.service.AuthService;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Mono;
@@ -21,8 +23,12 @@ public class AuthController {
             @RequestHeader("X-Api-Key") String apiKey) {
         return authService.authenticate(apiKey)
             .map(token -> ResponseEntity.ok(ApiResponse.ok(new TokenResponse(token))))
-            .onErrorReturn(ResponseEntity.status(401)
-                .body(ApiResponse.error("UNAUTHORIZED", "Authentication failed")));
+            .onErrorResume(UnauthorizedException.class, e ->
+                Mono.just(ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(ApiResponse.error("UNAUTHORIZED", "Authentication failed"))))
+            .onErrorResume(e ->
+                Mono.just(ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(ApiResponse.error("INTERNAL_ERROR", "Internal server error"))));
     }
 
     public record TokenResponse(String token) {}
