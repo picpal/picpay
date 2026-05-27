@@ -11,6 +11,7 @@ import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -24,23 +25,27 @@ public class BillingScheduler {
 
     private static final Logger log = LoggerFactory.getLogger(BillingScheduler.class);
     private static final long LOCK_TTL_SECONDS = 30;
+    private static final String TOPIC = "billing.executed";
 
     private final BillingPlanRepository billingPlanRepository;
     private final BillingHistoryRepository billingHistoryRepository;
     private final BillingRetryJobRepository billingRetryJobRepository;
     private final PaymentClient paymentClient;
     private final RedissonClient redissonClient;
+    private final KafkaTemplate<String, String> kafkaTemplate;
 
     public BillingScheduler(BillingPlanRepository billingPlanRepository,
                              BillingHistoryRepository billingHistoryRepository,
                              BillingRetryJobRepository billingRetryJobRepository,
                              PaymentClient paymentClient,
-                             RedissonClient redissonClient) {
+                             RedissonClient redissonClient,
+                             KafkaTemplate<String, String> kafkaTemplate) {
         this.billingPlanRepository = billingPlanRepository;
         this.billingHistoryRepository = billingHistoryRepository;
         this.billingRetryJobRepository = billingRetryJobRepository;
         this.paymentClient = paymentClient;
         this.redissonClient = redissonClient;
+        this.kafkaTemplate = kafkaTemplate;
     }
 
     @Scheduled(fixedDelay = 60000)
@@ -82,13 +87,24 @@ public class BillingScheduler {
             billingHistoryRepository.save(
                     BillingHistory.success(plan.getPlanId(), tid, plan.getAmount()));
 
+            String payload = String.format(
+                    "{\"planId\":\"%s\",\"tid\":\"%s\",\"amount\":%d,\"status\":\"SUCCESS\"}",
+                    plan.getPlanId(), tid, plan.getAmount());
+            kafkaTemplate.send(TOPIC, plan.getPlanId(), payload);
+
             log.info("[Billing] Success: planId={}, tid={}", plan.getPlanId(), tid);
         } catch (Exception e) {
             String reason = e.getMessage() != null ? e.getMessage() : e.getClass().getName();
             log.error("[Billing] Failed: planId={}", plan.getPlanId(), e);
+
             billingHistoryRepository.save(
                     BillingHistory.failure(plan.getPlanId(), plan.getAmount(), reason));
             billingRetryJobRepository.save(BillingRetryJob.create(plan.getPlanId(), reason));
+
+            String payload = String.format(
+                    "{\"planId\":\"%s\",\"amount\":%d,\"status\":\"FAILED\"}",
+                    plan.getPlanId(), plan.getAmount());
+            kafkaTemplate.send(TOPIC, plan.getPlanId(), payload);
         }
     }
 }

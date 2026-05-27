@@ -1,8 +1,10 @@
 package com.picpay.billing.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.picpay.billing.dto.BillingHistoryResponse;
 import com.picpay.billing.dto.BillingPlanResponse;
 import com.picpay.billing.dto.CreateBillingPlanRequest;
+import com.picpay.billing.service.BillingHistoryService;
 import com.picpay.billing.service.BillingPlanService;
 import com.picpay.common.exception.BusinessException;
 import com.picpay.common.exception.ErrorCode;
@@ -16,6 +18,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
@@ -29,6 +32,7 @@ class BillingControllerTest {
     @Autowired MockMvc mockMvc;
     @Autowired ObjectMapper objectMapper;
     @MockitoBean BillingPlanService billingPlanService;
+    @MockitoBean BillingHistoryService billingHistoryService;
 
     @Test
     void post_billingPlans_returns201WithActiveStatus() throws Exception {
@@ -76,5 +80,17 @@ class BillingControllerTest {
 
         mockMvc.perform(delete("/v1/billing/plans/BP-001"))
                 .andExpect(status().isNoContent());
+    }
+
+    @Test
+    void get_billingPlans_planId_history_returnsHistoryList() throws Exception {
+        BillingHistoryResponse entry = new BillingHistoryResponse(
+                1L, "BP-001", "TXN-001", 10000L, "SUCCESS", null, LocalDateTime.now());
+        when(billingHistoryService.findByPlanId("BP-001")).thenReturn(List.of(entry));
+
+        mockMvc.perform(get("/v1/billing/plans/BP-001/history"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[0].status").value("SUCCESS"))
+                .andExpect(jsonPath("$.data[0].tid").value("TXN-001"));
     }
 }

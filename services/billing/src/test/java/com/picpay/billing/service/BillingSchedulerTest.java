@@ -12,6 +12,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
+import org.springframework.kafka.core.KafkaTemplate;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -28,6 +29,8 @@ class BillingSchedulerTest {
     @Mock BillingRetryJobRepository billingRetryJobRepository;
     @Mock PaymentClient paymentClient;
     @Mock RedissonClient redissonClient;
+    @SuppressWarnings("unchecked")
+    @Mock KafkaTemplate<String, String> kafkaTemplate;
     @InjectMocks BillingScheduler billingScheduler;
 
     private BillingPlan duePlan() {
@@ -58,7 +61,7 @@ class BillingSchedulerTest {
 
         verify(paymentClient).requestPayment(eq("mer_001"), any(), eq("tok_abc"), eq(10000L));
         verify(billingHistoryRepository).save(argThat(h -> "SUCCESS".equals(h.getStatus())));
-        verify(billingPlanRepository).save(any(BillingPlan.class));
+        verify(kafkaTemplate).send(eq("billing.executed"), eq("BP-001"), contains("SUCCESS"));
         verify(lock).unlock();
     }
 
@@ -94,6 +97,7 @@ class BillingSchedulerTest {
 
         verify(billingHistoryRepository).save(argThat(h -> "FAILED".equals(h.getStatus())));
         verify(billingRetryJobRepository).save(argThat(j -> "BP-001".equals(j.getPlanId())));
+        verify(kafkaTemplate).send(eq("billing.executed"), eq("BP-001"), contains("FAILED"));
         verify(lock).unlock();
     }
 
@@ -103,6 +107,23 @@ class BillingSchedulerTest {
 
         billingScheduler.execute();
 
-        verifyNoInteractions(paymentClient, redissonClient);
+        verifyNoInteractions(paymentClient, redissonClient, kafkaTemplate);
+    }
+
+    @Test
+    void execute_success_publishesBillingExecutedEvent() throws InterruptedException {
+        BillingPlan plan = duePlan();
+        RLock lock = acquiredLock();
+
+        when(billingPlanRepository.findDuePlans(eq(BillingStatus.ACTIVE), any()))
+                .thenReturn(List.of(plan));
+        when(redissonClient.getLock("lock:billing:BP-001")).thenReturn(lock);
+        when(paymentClient.requestPayment(any(), any(), any(), any())).thenReturn("TXN-001");
+        when(billingPlanRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(billingHistoryRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        billingScheduler.execute();
+
+        verify(kafkaTemplate).send(eq("billing.executed"), eq("BP-001"), contains("SUCCESS"));
     }
 }
