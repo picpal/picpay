@@ -1,0 +1,90 @@
+services:
+  gateway:
+    image: picpay-gateway:latest
+    ports:
+      - "8080:8080"
+    environment:
+      JAVA_OPTS: "-Xmx150m -Xms75m -XX:+UseG1GC"
+      DB_URL: "r2dbc:postgresql://${RDS_HOST}:5432/picpay"
+      DB_USERNAME: "picpay"
+      DB_PASSWORD: "${DB_PASSWORD}"
+      JWT_SECRET: "${JWT_SECRET}"
+      SPRING_DATA_REDIS_HOST: "${EC2_B_PRIVATE_IP}"
+      SERVICES_PAYMENT_URL: "http://payment:8081"
+      SERVICES_BILLING_URL: "http://billing:8082"
+      SERVICES_TOKEN_URL: "http://token:8083"
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 200m
+
+  payment:
+    image: picpay-payment:latest
+    ports:
+      - "8081:8081"
+    environment:
+      JAVA_OPTS: "-Xmx200m -Xms100m -XX:+UseG1GC"
+      SPRING_DATASOURCE_URL: "jdbc:postgresql://${RDS_HOST}:5432/picpay"
+      SPRING_DATASOURCE_USERNAME: "picpay"
+      SPRING_DATASOURCE_PASSWORD: "${DB_PASSWORD}"
+      SPRING_DATA_REDIS_HOST: "${EC2_B_PRIVATE_IP}"
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: "${EC2_B_PRIVATE_IP}:9092"
+      TOKEN_SERVICE_URL: "http://token:8083"
+      VAULT_AES_KEY: "${VAULT_AES_KEY}"
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+
+  billing:
+    image: picpay-billing:latest
+    ports:
+      - "8082:8082"
+    environment:
+      JAVA_OPTS: "-Xmx150m -Xms75m -XX:+UseG1GC"
+      SPRING_DATASOURCE_URL: "jdbc:postgresql://${RDS_HOST}:5432/picpay"
+      SPRING_DATASOURCE_USERNAME: "picpay"
+      SPRING_DATASOURCE_PASSWORD: "${DB_PASSWORD}"
+      SPRING_DATA_REDIS_HOST: "${EC2_B_PRIVATE_IP}"
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: "${EC2_B_PRIVATE_IP}:9092"
+      PAYMENT_SERVICE_URL: "http://payment:8081"
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 200m
+
+  token:
+    image: picpay-token:latest
+    ports:
+      - "8083:8083"
+    environment:
+      JAVA_OPTS: "-Xmx150m -Xms75m -XX:+UseG1GC"
+      SPRING_DATASOURCE_URL: "jdbc:postgresql://${RDS_HOST}:5432/picpay"
+      SPRING_DATASOURCE_USERNAME: "picpay"
+      SPRING_DATASOURCE_PASSWORD: "${DB_PASSWORD}"
+      SPRING_DATA_REDIS_HOST: "${EC2_B_PRIVATE_IP}"
+      VAULT_AES_KEY: "${VAULT_AES_KEY}"
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 200m
+
+  notification:
+    image: picpay-notification:latest
+    ports:
+      - "8084:8084"
+    environment:
+      JAVA_OPTS: "-Xmx100m -Xms50m -XX:+UseG1GC"
+      SPRING_DATASOURCE_URL: "jdbc:postgresql://${RDS_HOST}:5432/picpay"
+      SPRING_DATASOURCE_USERNAME: "picpay"
+      SPRING_DATASOURCE_PASSWORD: "${DB_PASSWORD}"
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: "${EC2_B_PRIVATE_IP}:9092"
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 150m
