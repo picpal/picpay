@@ -113,6 +113,29 @@ class RateLimitFilterTest {
     }
 
     @Test
+    void filter_shouldPassThrough_whenRedisIsDown() {
+        when(rateLimitService.isAllowed(anyString(), anyInt()))
+            .thenReturn(Mono.error(new RuntimeException("Redis connection refused")));
+
+        MockServerWebExchange exchange = MockServerWebExchange.from(
+            MockServerHttpRequest.get("/v1/payments/123")
+                .header("X-Merchant-Id", "mer_001")
+                .build()
+        );
+
+        AtomicBoolean chainCalled = new AtomicBoolean(false);
+        GatewayFilterChain chain = ex -> {
+            chainCalled.set(true);
+            return Mono.empty();
+        };
+
+        rateLimitFilter.filter(exchange, chain).block();
+
+        assertThat(chainCalled.get()).isTrue();
+        assertThat(exchange.getResponse().getStatusCode()).isNotEqualTo(HttpStatus.TOO_MANY_REQUESTS);
+    }
+
+    @Test
     void filter_shouldIncludeRateLimitExceededCode_whenReturn429() throws Exception {
         when(rateLimitService.isAllowed(anyString(), anyInt())).thenReturn(Mono.just(false));
 

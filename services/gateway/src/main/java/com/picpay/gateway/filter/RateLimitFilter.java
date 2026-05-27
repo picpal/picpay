@@ -16,6 +16,8 @@ import reactor.core.publisher.Mono;
 @Component
 public class RateLimitFilter implements GlobalFilter, Ordered {
 
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(RateLimitFilter.class);
+
     private final RateLimitService rateLimitService;
     private final ObjectMapper objectMapper;
 
@@ -40,6 +42,7 @@ public class RateLimitFilter implements GlobalFilter, Ordered {
         }
 
         return rateLimitService.isAllowed(merchantId, 100)
+            .onErrorReturn(true)
             .flatMap(allowed -> {
                 if (allowed) {
                     return chain.filter(exchange);
@@ -57,6 +60,7 @@ public class RateLimitFilter implements GlobalFilter, Ordered {
             DataBuffer buffer = exchange.getResponse().bufferFactory().wrap(bytes);
             return exchange.getResponse().writeWith(Mono.just(buffer));
         } catch (Exception e) {
+            log.error("Failed to write rate limit error response", e);
             return exchange.getResponse().setComplete();
         }
     }
