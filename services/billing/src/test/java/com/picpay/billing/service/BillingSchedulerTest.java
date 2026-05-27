@@ -9,9 +9,12 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.redisson.api.RLock;
+import org.redisson.api.RedissonClient;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
@@ -22,15 +25,29 @@ class BillingSchedulerTest {
     @Mock BillingPlanRepository billingPlanRepository;
     @Mock BillingHistoryRepository billingHistoryRepository;
     @Mock PaymentClient paymentClient;
+    @Mock RedissonClient redissonClient;
     @InjectMocks BillingScheduler billingScheduler;
 
-    @Test
-    void execute_duePlan_callsPaymentAndSavesSuccessHistory() {
-        BillingPlan plan = BillingPlan.of("BP-001", "mer_001", "tok_abc",
+    private BillingPlan duePlan() {
+        return BillingPlan.of("BP-001", "mer_001", "tok_abc",
                 10000L, "MONTHLY", LocalDateTime.now().minusHours(1));
+    }
+
+    private RLock acquiredLock() throws InterruptedException {
+        RLock lock = mock(RLock.class);
+        when(lock.tryLock(0, 30, TimeUnit.SECONDS)).thenReturn(true);
+        when(lock.isHeldByCurrentThread()).thenReturn(true);
+        return lock;
+    }
+
+    @Test
+    void execute_lockAcquired_processesAndUnlocks() throws InterruptedException {
+        BillingPlan plan = duePlan();
+        RLock lock = acquiredLock();
 
         when(billingPlanRepository.findDuePlans(eq(BillingStatus.ACTIVE), any()))
                 .thenReturn(List.of(plan));
+        when(redissonClient.getLock("lock:billing:BP-001")).thenReturn(lock);
         when(paymentClient.requestPayment(any(), any(), any(), any())).thenReturn("TXN-001");
         when(billingPlanRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
         when(billingHistoryRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
@@ -40,15 +57,32 @@ class BillingSchedulerTest {
         verify(paymentClient).requestPayment(eq("mer_001"), any(), eq("tok_abc"), eq(10000L));
         verify(billingHistoryRepository).save(argThat(h -> "SUCCESS".equals(h.getStatus())));
         verify(billingPlanRepository).save(any(BillingPlan.class));
+        verify(lock).unlock();
     }
 
     @Test
-    void execute_paymentFails_savesFailureHistory() {
-        BillingPlan plan = BillingPlan.of("BP-001", "mer_001", "tok_abc",
-                10000L, "MONTHLY", LocalDateTime.now().minusHours(1));
+    void execute_lockNotAcquired_skipsProcessing() throws InterruptedException {
+        BillingPlan plan = duePlan();
+        RLock lock = mock(RLock.class);
+        when(lock.tryLock(0, 30, TimeUnit.SECONDS)).thenReturn(false);
 
         when(billingPlanRepository.findDuePlans(eq(BillingStatus.ACTIVE), any()))
                 .thenReturn(List.of(plan));
+        when(redissonClient.getLock("lock:billing:BP-001")).thenReturn(lock);
+
+        billingScheduler.execute();
+
+        verifyNoInteractions(paymentClient);
+    }
+
+    @Test
+    void execute_paymentFails_savesFailureHistoryAndUnlocks() throws InterruptedException {
+        BillingPlan plan = duePlan();
+        RLock lock = acquiredLock();
+
+        when(billingPlanRepository.findDuePlans(eq(BillingStatus.ACTIVE), any()))
+                .thenReturn(List.of(plan));
+        when(redissonClient.getLock("lock:billing:BP-001")).thenReturn(lock);
         when(paymentClient.requestPayment(any(), any(), any(), any()))
                 .thenThrow(new RuntimeException("Payment service unavailable"));
         when(billingHistoryRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
@@ -56,6 +90,7 @@ class BillingSchedulerTest {
         billingScheduler.execute();
 
         verify(billingHistoryRepository).save(argThat(h -> "FAILED".equals(h.getStatus())));
+        verify(lock).unlock();
     }
 
     @Test
@@ -64,6 +99,6 @@ class BillingSchedulerTest {
 
         billingScheduler.execute();
 
-        verifyNoInteractions(paymentClient);
+        verifyNoInteractions(paymentClient, redissonClient);
     }
 }
