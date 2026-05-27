@@ -5,7 +5,7 @@ source infra/infra-ids.env
 echo "=== Creating Application Load Balancer ==="
 ALB_ARN=$(aws elbv2 create-load-balancer \
   --name picpay-alb \
-  --subnets $PUBLIC_SUBNET_ID \
+  --subnets $PUBLIC_SUBNET_ID $PUBLIC_SUBNET_ID2 \
   --security-groups $SG_ALB \
   --type application \
   --region $REGION \

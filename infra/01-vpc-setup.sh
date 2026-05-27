@@ -20,14 +20,19 @@ PUBLIC_SUBNET_ID=$(aws ec2 create-subnet --vpc-id $VPC_ID \
   --query 'Subnet.SubnetId' --output text)
 aws ec2 modify-subnet-attribute --subnet-id $PUBLIC_SUBNET_ID --map-public-ip-on-launch
 
-echo "=== [3/8] Creating Private Subnet ==="
+echo "=== [3/8] Creating Private + Additional Public Subnets ==="
 PRIVATE_SUBNET_ID=$(aws ec2 create-subnet --vpc-id $VPC_ID \
   --cidr-block $PRIVATE_CIDR --availability-zone $AZ \
   --tag-specifications "ResourceType=subnet,Tags=[{Key=Name,Value=picpay-private}]" \
   --query 'Subnet.SubnetId' --output text)
 
-# Additional private subnet in different AZ (required for RDS Subnet Group)
+# Second AZ (required for RDS Subnet Group AND ALB — ALB requires 2+ AZs)
 AZ2="ap-northeast-2c"
+PUBLIC_SUBNET_ID2=$(aws ec2 create-subnet --vpc-id $VPC_ID \
+  --cidr-block "10.0.4.0/24" --availability-zone $AZ2 \
+  --tag-specifications "ResourceType=subnet,Tags=[{Key=Name,Value=picpay-public-2}]" \
+  --query 'Subnet.SubnetId' --output text)
+aws ec2 modify-subnet-attribute --subnet-id $PUBLIC_SUBNET_ID2 --map-public-ip-on-launch
 PRIVATE_SUBNET_ID2=$(aws ec2 create-subnet --vpc-id $VPC_ID \
   --cidr-block "10.0.3.0/24" --availability-zone $AZ2 \
   --tag-specifications "ResourceType=subnet,Tags=[{Key=Name,Value=picpay-private-2}]" \
@@ -45,6 +50,7 @@ PUBLIC_RT=$(aws ec2 create-route-table --vpc-id $VPC_ID \
   --query 'RouteTable.RouteTableId' --output text)
 aws ec2 create-route --route-table-id $PUBLIC_RT --destination-cidr-block 0.0.0.0/0 --gateway-id $IGW_ID
 aws ec2 associate-route-table --route-table-id $PUBLIC_RT --subnet-id $PUBLIC_SUBNET_ID
+aws ec2 associate-route-table --route-table-id $PUBLIC_RT --subnet-id $PUBLIC_SUBNET_ID2
 
 PRIVATE_RT=$(aws ec2 create-route-table --vpc-id $VPC_ID \
   --tag-specifications "ResourceType=route-table,Tags=[{Key=Name,Value=picpay-private-rt}]" \
@@ -101,6 +107,7 @@ cat > infra/infra-ids.env <<EOF
 REGION=$REGION
 VPC_ID=$VPC_ID
 PUBLIC_SUBNET_ID=$PUBLIC_SUBNET_ID
+PUBLIC_SUBNET_ID2=$PUBLIC_SUBNET_ID2
 PRIVATE_SUBNET_ID=$PRIVATE_SUBNET_ID
 PRIVATE_SUBNET_ID2=$PRIVATE_SUBNET_ID2
 IGW_ID=$IGW_ID
