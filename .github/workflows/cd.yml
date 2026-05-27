@@ -120,17 +120,17 @@ jobs:
             scp -o StrictHostKeyChecking=no \
               /tmp/zookeeper.tar.gz /tmp/kafka.tar.gz /tmp/redis.tar.gz \
               /tmp/docker-compose.ec2-b.yml \
-              $EC2_USER@\$EC2_B:/tmp/
+              \$EC2_USER@\$EC2_B:/tmp/
 
             echo "Loading and starting middleware on EC2-B..."
-            ssh -o StrictHostKeyChecking=no $EC2_USER@\$EC2_B bash <<'INNER'
+            ssh -o StrictHostKeyChecking=no \$EC2_USER@\$EC2_B bash <<'INNER'
             set -e
             for img in zookeeper kafka redis; do
-              echo "Loading \$img..."
-              docker load < /tmp/\${img}.tar.gz
+              echo "Loading $img..."
+              docker load < /tmp/${img}.tar.gz
             done
             cp /tmp/docker-compose.ec2-b.yml /home/ubuntu/docker-compose.yml
-            EC2_B_PRIVATE_IP=$(hostname -I | awk '{print \$1}') \
+            EC2_B_PRIVATE_IP=$(hostname -I | awk '{print $1}') \
             docker compose up -d --remove-orphans
           INNER
           REMOTE
