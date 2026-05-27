@@ -1,0 +1,148 @@
+# Required GitHub Actions Secrets:
+# EC2_SSH_KEY       - PEM key file contents for SSH access
+# EC2_HOST          - EC2-A public IP (updated by infra/start-ec2.sh)
+# EC2_B_PRIVATE_IP  - EC2-B private IP (static, from infra/infra-ids.env)
+# RDS_HOST          - RDS endpoint hostname
+# DB_PASSWORD       - PostgreSQL master password
+# JWT_SECRET        - JWT signing key (base64, min 32 bytes)
+# VAULT_AES_KEY     - AES-256 encryption key (base64, 32 bytes)
+
+name: CD
+
+on:
+  push:
+    branches: [main]
+
+env:
+  EC2_USER: ubuntu
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: 'gradle'
+
+      - name: Build JARs
+        run: ./gradlew bootJar -x test --no-daemon
+
+      - name: Build WAS Docker images
+        run: |
+          for svc in gateway payment billing token notification; do
+            docker build -f services/$svc/Dockerfile -t picpay-$svc:latest .
+          done
+
+      - name: Save WAS images to tar.gz
+        run: |
+          mkdir -p /tmp/images
+          for svc in gateway payment billing token notification; do
+            docker save picpay-$svc:latest | gzip > /tmp/images/$svc.tar.gz
+          done
+
+      - name: Pull and save middleware images
+        run: |
+          docker pull confluentinc/cp-zookeeper:7.5.0
+          docker pull confluentinc/cp-kafka:7.5.0
+          docker pull redis:7
+          docker save confluentinc/cp-zookeeper:7.5.0 | gzip > /tmp/images/zookeeper.tar.gz
+          docker save confluentinc/cp-kafka:7.5.0 | gzip > /tmp/images/kafka.tar.gz
+          docker save redis:7 | gzip > /tmp/images/redis.tar.gz
+
+      - name: Setup SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/picpay.pem
+          chmod 600 ~/.ssh/picpay.pem
+          # Add EC2-A to known hosts
+          ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts 2>/dev/null || true
+
+      - name: Copy WAS images to EC2-A
+        run: |
+          scp -i ~/.ssh/picpay.pem -o StrictHostKeyChecking=no \
+            /tmp/images/gateway.tar.gz \
+            /tmp/images/payment.tar.gz \
+            /tmp/images/billing.tar.gz \
+            /tmp/images/token.tar.gz \
+            /tmp/images/notification.tar.gz \
+            $EC2_USER@${{ secrets.EC2_HOST }}:/tmp/
+
+      - name: Copy docker-compose to EC2-A
+        run: |
+          scp -i ~/.ssh/picpay.pem -o StrictHostKeyChecking=no \
+            deploy/docker-compose.ec2-a.yml \
+            $EC2_USER@${{ secrets.EC2_HOST }}:/home/ubuntu/docker-compose.yml
+
+      - name: Deploy WAS services on EC2-A
+        run: |
+          ssh -i ~/.ssh/picpay.pem -o StrictHostKeyChecking=no \
+            $EC2_USER@${{ secrets.EC2_HOST }} bash <<'REMOTE'
+            set -e
+            for svc in gateway payment billing token notification; do
+              echo "Loading $svc image..."
+              docker load < /tmp/${svc}.tar.gz
+            done
+            echo "Starting WAS services..."
+            RDS_HOST=${{ secrets.RDS_HOST }} \
+            DB_PASSWORD=${{ secrets.DB_PASSWORD }} \
+            JWT_SECRET=${{ secrets.JWT_SECRET }} \
+            VAULT_AES_KEY=${{ secrets.VAULT_AES_KEY }} \
+            EC2_B_PRIVATE_IP=${{ secrets.EC2_B_PRIVATE_IP }} \
+            docker compose up -d --remove-orphans
+          REMOTE
+
+      - name: Copy middleware images to EC2-A (for relay to EC2-B)
+        run: |
+          scp -i ~/.ssh/picpay.pem -o StrictHostKeyChecking=no \
+            /tmp/images/zookeeper.tar.gz \
+            /tmp/images/kafka.tar.gz \
+            /tmp/images/redis.tar.gz \
+            $EC2_USER@${{ secrets.EC2_HOST }}:/tmp/
+
+      - name: Copy docker-compose.ec2-b to EC2-A
+        run: |
+          scp -i ~/.ssh/picpay.pem -o StrictHostKeyChecking=no \
+            deploy/docker-compose.ec2-b.yml \
+            $EC2_USER@${{ secrets.EC2_HOST }}:/tmp/docker-compose.ec2-b.yml
+
+      - name: Relay middleware to EC2-B via EC2-A bastion and deploy
+        run: |
+          ssh -i ~/.ssh/picpay.pem -o StrictHostKeyChecking=no \
+            $EC2_USER@${{ secrets.EC2_HOST }} bash <<REMOTE
+            set -e
+            EC2_B="${{ secrets.EC2_B_PRIVATE_IP }}"
+
+            echo "Copying images to EC2-B..."
+            scp -o StrictHostKeyChecking=no \
+              /tmp/zookeeper.tar.gz /tmp/kafka.tar.gz /tmp/redis.tar.gz \
+              /tmp/docker-compose.ec2-b.yml \
+              $EC2_USER@\$EC2_B:/tmp/
+
+            echo "Loading and starting middleware on EC2-B..."
+            ssh -o StrictHostKeyChecking=no $EC2_USER@\$EC2_B bash <<'INNER'
+            set -e
+            for img in zookeeper kafka redis; do
+              echo "Loading \$img..."
+              docker load < /tmp/\${img}.tar.gz
+            done
+            cp /tmp/docker-compose.ec2-b.yml /home/ubuntu/docker-compose.yml
+            EC2_B_PRIVATE_IP=$(hostname -I | awk '{print \$1}') \
+            docker compose up -d --remove-orphans
+          INNER
+          REMOTE
+
+      - name: Health check
+        run: |
+          echo "Waiting 40s for services to start..."
+          sleep 40
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            http://${{ secrets.EC2_HOST }}:8080/actuator/health)
+          if [ "$STATUS" != "200" ]; then
+            echo "Health check failed: HTTP $STATUS"
+            exit 1
+          fi
+          echo "Health check passed: HTTP $STATUS"
