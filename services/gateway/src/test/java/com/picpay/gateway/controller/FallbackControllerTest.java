@@ -34,6 +34,7 @@ class FallbackControllerTest {
             .exchange()
             .expectStatus().isEqualTo(503)
             .expectBody()
+            .jsonPath("$.success").isEqualTo(false)
             .jsonPath("$.error.code").isEqualTo("SERVICE_UNAVAILABLE")
             .jsonPath("$.error.message").isEqualTo("billing service is temporarily unavailable");
     }
@@ -44,6 +45,7 @@ class FallbackControllerTest {
             .exchange()
             .expectStatus().isEqualTo(503)
             .expectBody()
+            .jsonPath("$.success").isEqualTo(false)
             .jsonPath("$.error.code").isEqualTo("SERVICE_UNAVAILABLE")
             .jsonPath("$.error.message").isEqualTo("token service is temporarily unavailable");
     }
