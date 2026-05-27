@@ -1,9 +1,50 @@
 spring:
   application:
     name: gateway-service
+  r2dbc:
+    url: r2dbc:postgresql://localhost:5432/picpay
+    username: picpay
+    password: picpay
+  flyway:
+    enabled: false
+  data:
+    redis:
+      host: localhost
+      port: 6379
 
 server:
   port: 8080
+
+jwt:
+  secret: ${JWT_SECRET:dGhpcyBpcyBhIDMyLWJ5dGUgZGV2IHNlY3JldCBrZXkh}
+  expiration-ms: 3600000
+
+services:
+  payment:
+    url: http://localhost:8081
+  billing:
+    url: http://localhost:8082
+  token:
+    url: http://localhost:8083
+
+resilience4j:
+  circuitbreaker:
+    instances:
+      paymentCB:
+        sliding-window-size: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 10s
+        permitted-number-of-calls-in-half-open-state: 3
+      billingCB:
+        sliding-window-size: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 10s
+        permitted-number-of-calls-in-half-open-state: 3
+      tokenCB:
+        sliding-window-size: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 10s
+        permitted-number-of-calls-in-half-open-state: 3
 
 management:
   endpoints:
