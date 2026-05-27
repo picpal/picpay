@@ -1,5 +1,6 @@
 package com.picpay.billing.service;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.picpay.billing.domain.BillingHistory;
 import com.picpay.billing.domain.BillingPlan;
 import com.picpay.billing.domain.BillingRetryJob;
@@ -16,7 +17,9 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDateTime;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
@@ -33,19 +36,22 @@ public class BillingScheduler {
     private final PaymentClient paymentClient;
     private final RedissonClient redissonClient;
     private final KafkaTemplate<String, String> kafkaTemplate;
+    private final ObjectMapper objectMapper;
 
     public BillingScheduler(BillingPlanRepository billingPlanRepository,
                              BillingHistoryRepository billingHistoryRepository,
                              BillingRetryJobRepository billingRetryJobRepository,
                              PaymentClient paymentClient,
                              RedissonClient redissonClient,
-                             KafkaTemplate<String, String> kafkaTemplate) {
+                             KafkaTemplate<String, String> kafkaTemplate,
+                             ObjectMapper objectMapper) {
         this.billingPlanRepository = billingPlanRepository;
         this.billingHistoryRepository = billingHistoryRepository;
         this.billingRetryJobRepository = billingRetryJobRepository;
         this.paymentClient = paymentClient;
         this.redissonClient = redissonClient;
         this.kafkaTemplate = kafkaTemplate;
+        this.objectMapper = objectMapper;
     }
 
     @Scheduled(fixedDelay = 60000)
@@ -87,11 +93,7 @@ public class BillingScheduler {
             billingHistoryRepository.save(
                     BillingHistory.success(plan.getPlanId(), tid, plan.getAmount()));
 
-            String payload = String.format(
-                    "{\"planId\":\"%s\",\"tid\":\"%s\",\"amount\":%d,\"status\":\"SUCCESS\"}",
-                    plan.getPlanId(), tid, plan.getAmount());
-            kafkaTemplate.send(TOPIC, plan.getPlanId(), payload);
-
+            publishEvent(plan.getPlanId(), tid, plan.getAmount(), "SUCCESS", null);
             log.info("[Billing] Success: planId={}, tid={}", plan.getPlanId(), tid);
         } catch (Exception e) {
             String reason = e.getMessage() != null ? e.getMessage() : e.getClass().getName();
@@ -101,10 +103,28 @@ public class BillingScheduler {
                     BillingHistory.failure(plan.getPlanId(), plan.getAmount(), reason));
             billingRetryJobRepository.save(BillingRetryJob.create(plan.getPlanId(), reason));
 
-            String payload = String.format(
-                    "{\"planId\":\"%s\",\"amount\":%d,\"status\":\"FAILED\"}",
-                    plan.getPlanId(), plan.getAmount());
-            kafkaTemplate.send(TOPIC, plan.getPlanId(), payload);
+            publishEvent(plan.getPlanId(), null, plan.getAmount(), "FAILED", reason);
+        }
+    }
+
+    void publishEvent(String planId, String tid, Long amount, String status, String failureReason) {
+        try {
+            Map<String, Object> data = new LinkedHashMap<>();
+            data.put("planId", planId);
+            data.put("tid", tid);
+            data.put("amount", amount);
+            data.put("status", status);
+            data.put("failureReason", failureReason);
+
+            Map<String, Object> event = new LinkedHashMap<>();
+            event.put("eventId", "evt-" + UUID.randomUUID());
+            event.put("eventType", "BILLING_EXECUTED");
+            event.put("timestamp", LocalDateTime.now().toString());
+            event.put("data", data);
+
+            kafkaTemplate.send(TOPIC, planId, objectMapper.writeValueAsString(event));
+        } catch (Exception e) {
+            log.error("[Billing] Failed to publish Kafka event: planId={}", planId, e);
         }
     }
 }
