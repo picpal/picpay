@@ -15,7 +15,6 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.verify;
@@ -54,10 +53,9 @@ class PaymentEventConsumerIntegrationTest {
     void paymentCompleted_isConsumedAndIdempotencyChecked() throws Exception {
         String eventId = "integ-test-event-001";
         String payload = "{\"tid\":\"TSVR01tid001\",\"status\":\"PAID\"}";
-        AtomicInteger callCount = new AtomicInteger(0);
 
         when(processedEventRepository.insertIfNotExists(anyString(), anyString()))
-                .thenAnswer(inv -> callCount.incrementAndGet() > 0 ? 1 : 0);
+                .thenReturn(1);
 
         ProducerRecord<String, String> record = new ProducerRecord<>(
                 "payment.completed", "TSVR01tid001", payload);
