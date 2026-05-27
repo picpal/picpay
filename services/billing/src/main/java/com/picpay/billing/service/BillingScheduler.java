@@ -2,9 +2,11 @@ package com.picpay.billing.service;
 
 import com.picpay.billing.domain.BillingHistory;
 import com.picpay.billing.domain.BillingPlan;
+import com.picpay.billing.domain.BillingRetryJob;
 import com.picpay.billing.domain.BillingStatus;
 import com.picpay.billing.repository.BillingHistoryRepository;
 import com.picpay.billing.repository.BillingPlanRepository;
+import com.picpay.billing.repository.BillingRetryJobRepository;
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
 import org.slf4j.Logger;
@@ -25,15 +27,18 @@ public class BillingScheduler {
 
     private final BillingPlanRepository billingPlanRepository;
     private final BillingHistoryRepository billingHistoryRepository;
+    private final BillingRetryJobRepository billingRetryJobRepository;
     private final PaymentClient paymentClient;
     private final RedissonClient redissonClient;
 
     public BillingScheduler(BillingPlanRepository billingPlanRepository,
                              BillingHistoryRepository billingHistoryRepository,
+                             BillingRetryJobRepository billingRetryJobRepository,
                              PaymentClient paymentClient,
                              RedissonClient redissonClient) {
         this.billingPlanRepository = billingPlanRepository;
         this.billingHistoryRepository = billingHistoryRepository;
+        this.billingRetryJobRepository = billingRetryJobRepository;
         this.paymentClient = paymentClient;
         this.redissonClient = redissonClient;
     }
@@ -83,6 +88,7 @@ public class BillingScheduler {
             log.error("[Billing] Failed: planId={}", plan.getPlanId(), e);
             billingHistoryRepository.save(
                     BillingHistory.failure(plan.getPlanId(), plan.getAmount(), reason));
+            billingRetryJobRepository.save(BillingRetryJob.create(plan.getPlanId(), reason));
         }
     }
 }

@@ -4,6 +4,7 @@ import com.picpay.billing.domain.BillingPlan;
 import com.picpay.billing.domain.BillingStatus;
 import com.picpay.billing.repository.BillingHistoryRepository;
 import com.picpay.billing.repository.BillingPlanRepository;
+import com.picpay.billing.repository.BillingRetryJobRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -24,6 +25,7 @@ class BillingSchedulerTest {
 
     @Mock BillingPlanRepository billingPlanRepository;
     @Mock BillingHistoryRepository billingHistoryRepository;
+    @Mock BillingRetryJobRepository billingRetryJobRepository;
     @Mock PaymentClient paymentClient;
     @Mock RedissonClient redissonClient;
     @InjectMocks BillingScheduler billingScheduler;
@@ -76,7 +78,7 @@ class BillingSchedulerTest {
     }
 
     @Test
-    void execute_paymentFails_savesFailureHistoryAndUnlocks() throws InterruptedException {
+    void execute_paymentFails_savesFailureHistoryAndCreatesRetryJob() throws InterruptedException {
         BillingPlan plan = duePlan();
         RLock lock = acquiredLock();
 
@@ -86,10 +88,12 @@ class BillingSchedulerTest {
         when(paymentClient.requestPayment(any(), any(), any(), any()))
                 .thenThrow(new RuntimeException("Payment service unavailable"));
         when(billingHistoryRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(billingRetryJobRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
         billingScheduler.execute();
 
         verify(billingHistoryRepository).save(argThat(h -> "FAILED".equals(h.getStatus())));
+        verify(billingRetryJobRepository).save(argThat(j -> "BP-001".equals(j.getPlanId())));
         verify(lock).unlock();
     }
 
