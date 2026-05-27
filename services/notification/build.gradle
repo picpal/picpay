@@ -10,4 +10,6 @@ dependencies {
     implementation 'org.springframework.kafka:spring-kafka'
     runtimeOnly 'org.postgresql:postgresql'
     testImplementation 'org.springframework.kafka:spring-kafka-test'
+    testImplementation 'org.awaitility:awaitility:4.2.2'
+    testRuntimeOnly 'com.h2database:h2'
 }
