@@ -13,6 +13,19 @@ services:
       SERVICES_PAYMENT_URL: "http://payment:8081"
       SERVICES_BILLING_URL: "http://billing:8082"
       SERVICES_TOKEN_URL: "http://token:8083"
+    depends_on:
+      payment:
+        condition: service_healthy
+      billing:
+        condition: service_healthy
+      token:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:8080/actuator/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
     restart: unless-stopped
     deploy:
       resources:
@@ -32,6 +45,12 @@ services:
       SPRING_KAFKA_BOOTSTRAP_SERVERS: "${EC2_B_PRIVATE_IP}:9092"
       TOKEN_SERVICE_URL: "http://token:8083"
       VAULT_AES_KEY: "${VAULT_AES_KEY}"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:8081/actuator/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
     restart: unless-stopped
     deploy:
       resources:
@@ -50,6 +69,17 @@ services:
       SPRING_DATA_REDIS_HOST: "${EC2_B_PRIVATE_IP}"
       SPRING_KAFKA_BOOTSTRAP_SERVERS: "${EC2_B_PRIVATE_IP}:9092"
       PAYMENT_SERVICE_URL: "http://payment:8081"
+    depends_on:
+      payment:
+        condition: service_healthy
+      token:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:8082/actuator/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
     restart: unless-stopped
     deploy:
       resources:
@@ -67,6 +97,12 @@ services:
       SPRING_DATASOURCE_PASSWORD: "${DB_PASSWORD}"
       SPRING_DATA_REDIS_HOST: "${EC2_B_PRIVATE_IP}"
       VAULT_AES_KEY: "${VAULT_AES_KEY}"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:8083/actuator/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
     restart: unless-stopped
     deploy:
       resources:
@@ -83,6 +119,12 @@ services:
       SPRING_DATASOURCE_USERNAME: "picpay"
       SPRING_DATASOURCE_PASSWORD: "${DB_PASSWORD}"
       SPRING_KAFKA_BOOTSTRAP_SERVERS: "${EC2_B_PRIVATE_IP}:9092"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:8084/actuator/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
     restart: unless-stopped
     deploy:
       resources:
