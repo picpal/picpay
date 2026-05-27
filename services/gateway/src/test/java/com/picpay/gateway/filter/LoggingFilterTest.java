@@ -12,6 +12,7 @@ import reactor.core.publisher.Mono;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class LoggingFilterTest {
 
@@ -71,5 +72,19 @@ class LoggingFilterTest {
         filter.filter(exchange, chain).block();
 
         assertThat(chainCalled.get()).isTrue();
+    }
+
+    @Test
+    void shouldPropagateChainErrors() {
+        MockServerWebExchange exchange = MockServerWebExchange.from(
+            MockServerHttpRequest.get("/v1/payments/123").build()
+        );
+        GatewayFilterChain chain = ex -> Mono.error(new RuntimeException("downstream failure"));
+
+        Mono<Void> result = filter.filter(exchange, chain);
+
+        assertThatThrownBy(result::block)
+            .isInstanceOf(RuntimeException.class)
+            .hasMessage("downstream failure");
     }
 }

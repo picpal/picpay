@@ -38,13 +38,15 @@ public class LoggingFilter implements GlobalFilter, Ordered {
             .build();
         ServerWebExchange mutatedExchange = exchange.mutate().request(mutatedRequest).build();
 
+        mutatedExchange.getResponse().getHeaders().set(TRANSACTION_ID_HEADER, transactionId);
+
         return chain.filter(mutatedExchange)
             .doFinally(signalType -> {
                 long duration = System.currentTimeMillis() - startTime;
                 Integer statusCode = mutatedExchange.getResponse().getStatusCode() != null
                     ? mutatedExchange.getResponse().getStatusCode().value() : 0;
-                log.info("tid={} method={} path={} status={} duration={}ms",
-                    transactionId, method, path, statusCode, duration);
+                log.info("tid={} method={} path={} status={} signal={} duration={}ms",
+                    transactionId, method, path, statusCode, signalType, duration);
             });
     }
 }
