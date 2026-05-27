@@ -39,6 +39,7 @@ class BillingSchedulerTest {
 
         verify(paymentClient).requestPayment(eq("mer_001"), any(), eq("tok_abc"), eq(10000L));
         verify(billingHistoryRepository).save(argThat(h -> "SUCCESS".equals(h.getStatus())));
+        verify(billingPlanRepository).save(any(BillingPlan.class));
     }
 
     @Test

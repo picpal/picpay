@@ -30,6 +30,13 @@ public class PaymentClient {
                 .retrieve()
                 .body(JsonNode.class);
 
-        return response.path("data").path("tid").asText();
+        if (response == null || !response.path("success").asBoolean()) {
+            throw new IllegalStateException("Payment response missing or not successful");
+        }
+        String tid = response.path("data").path("tid").asText();
+        if (tid.isBlank()) {
+            throw new IllegalStateException("Payment response missing tid");
+        }
+        return tid;
     }
 }
