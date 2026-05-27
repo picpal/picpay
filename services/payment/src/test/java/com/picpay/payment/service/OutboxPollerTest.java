@@ -73,6 +73,7 @@ class OutboxPollerTest {
         verify(outboxEventRepository).save(argThat(e -> e.getStatus() == OutboxStatus.FAILED));
         assertThat(event.getStatus()).isEqualTo(OutboxStatus.FAILED);
         assertThat(event.getRetryCount()).isEqualTo(1);
+        assertThat(event.getLastError()).isNotBlank();
     }
 
     @Test
