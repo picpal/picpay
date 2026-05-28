@@ -59,6 +59,12 @@ jobs:
           echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/picpay.pem
           chmod 600 ~/.ssh/picpay.pem
           ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts 2>/dev/null || true
+          # Copy PEM key to EC2-A so it can SSH into EC2-B (bastion relay)
+          scp -i ~/.ssh/picpay.pem -o StrictHostKeyChecking=no \
+            ~/.ssh/picpay.pem \
+            $EC2_USER@${{ secrets.EC2_HOST }}:~/.ssh/picpay.pem
+          ssh -i ~/.ssh/picpay.pem -o StrictHostKeyChecking=no \
+            $EC2_USER@${{ secrets.EC2_HOST }} "chmod 600 ~/.ssh/picpay.pem"
 
       # ── EC2-B FIRST: Redis/Kafka must be ready before WAS services start ──
 
@@ -84,13 +90,13 @@ jobs:
             EC2_B="${{ secrets.EC2_B_PRIVATE_IP }}"
 
             echo "Copying images to EC2-B..."
-            scp -o StrictHostKeyChecking=no \
+            scp -i ~/.ssh/picpay.pem -o StrictHostKeyChecking=no \
               /tmp/zookeeper.tar.gz /tmp/kafka.tar.gz /tmp/redis.tar.gz \
               /tmp/docker-compose.ec2-b.yml \
               \$EC2_USER@\$EC2_B:/tmp/
 
             echo "Loading and starting middleware on EC2-B..."
-            ssh -o StrictHostKeyChecking=no \$EC2_USER@\$EC2_B bash <<'INNER'
+            ssh -i ~/.ssh/picpay.pem -o StrictHostKeyChecking=no \$EC2_USER@\$EC2_B bash <<'INNER'
             set -e
             for img in zookeeper kafka redis; do
               echo "Loading $img..."
