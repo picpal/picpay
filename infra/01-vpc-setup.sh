@@ -59,28 +59,28 @@ aws ec2 associate-route-table --route-table-id $PRIVATE_RT --subnet-id $PRIVATE_
 aws ec2 associate-route-table --route-table-id $PRIVATE_RT --subnet-id $PRIVATE_SUBNET_ID2
 
 echo "=== [6/8] Creating Security Groups ==="
-SG_ALB=$(aws ec2 create-security-group --group-name sg-alb \
+SG_ALB=$(aws ec2 create-security-group --group-name picpay-alb \
   --description "ALB SG - load balancer for load testing" \
   --vpc-id $VPC_ID --query 'GroupId' --output text)
-aws ec2 create-tags --resources $SG_ALB --tags Key=Name,Value=sg-alb
+aws ec2 create-tags --resources $SG_ALB --tags Key=Name,Value=picpay-alb
 
-SG_WAS=$(aws ec2 create-security-group --group-name sg-was \
+SG_WAS=$(aws ec2 create-security-group --group-name picpay-was \
   --description "WAS SG - Spring Boot services" \
   --vpc-id $VPC_ID --query 'GroupId' --output text)
-aws ec2 create-tags --resources $SG_WAS --tags Key=Name,Value=sg-was
+aws ec2 create-tags --resources $SG_WAS --tags Key=Name,Value=picpay-was
 
-SG_MIDDLEWARE=$(aws ec2 create-security-group --group-name sg-middleware \
+SG_MIDDLEWARE=$(aws ec2 create-security-group --group-name picpay-middleware \
   --description "Middleware SG - Kafka + Redis" \
   --vpc-id $VPC_ID --query 'GroupId' --output text)
-aws ec2 create-tags --resources $SG_MIDDLEWARE --tags Key=Name,Value=sg-middleware
+aws ec2 create-tags --resources $SG_MIDDLEWARE --tags Key=Name,Value=picpay-middleware
 
-SG_DB=$(aws ec2 create-security-group --group-name sg-db \
+SG_DB=$(aws ec2 create-security-group --group-name picpay-db \
   --description "DB SG - RDS PostgreSQL" \
   --vpc-id $VPC_ID --query 'GroupId' --output text)
-aws ec2 create-tags --resources $SG_DB --tags Key=Name,Value=sg-db
+aws ec2 create-tags --resources $SG_DB --tags Key=Name,Value=picpay-db
 
 echo "=== [7/8] Configuring Security Group Rules ==="
-MY_IP=$(curl -s ifconfig.me)/32
+MY_IP=$(curl -s https://checkip.amazonaws.com | tr -d '\n')/32
 echo "Your IP: $MY_IP"
 
 # sg-alb: HTTP 80 from anywhere

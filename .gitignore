@@ -14,3 +14,4 @@ build/
 # Spring Boot
 *.jar
 !gradle/wrapper/gradle-wrapper.jar
+infra/infra-ids.env
