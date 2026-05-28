@@ -31,18 +31,16 @@ jobs:
       - name: Build JARs
         run: ./gradlew bootJar -x test --no-daemon
 
-      - name: Build WAS Docker images
-        run: |
-          for svc in gateway payment billing token notification; do
-            docker build -f services/$svc/Dockerfile -t picpay-$svc:latest .
-          done
-
-      - name: Save WAS images to tar.gz
+      - name: Build WAS Docker images (parallel)
         run: |
           mkdir -p /tmp/images
           for svc in gateway payment billing token notification; do
-            docker save picpay-$svc:latest | gzip > /tmp/images/$svc.tar.gz
+            (docker build -f services/$svc/Dockerfile -t picpay-$svc:latest . \
+              && docker save picpay-$svc:latest | gzip > /tmp/images/$svc.tar.gz \
+              && echo "$svc done") &
           done
+          wait
+          echo "All images built and saved"
 
       - name: Pull and save middleware images
         run: |
