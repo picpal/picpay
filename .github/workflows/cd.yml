@@ -85,6 +85,7 @@ jobs:
           ssh -i ~/.ssh/picpay.pem -o StrictHostKeyChecking=no \
             $EC2_USER@${{ secrets.EC2_HOST }} bash <<REMOTE
             set -e
+            EC2_USER=ubuntu
             EC2_B="${{ secrets.EC2_B_PRIVATE_IP }}"
 
             echo "Copying images to EC2-B..."
