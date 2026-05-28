@@ -80,6 +80,12 @@ jobs:
             deploy/docker-compose.ec2-b.yml \
             $EC2_USER@${{ secrets.EC2_HOST }}:/tmp/docker-compose.ec2-b.yml
 
+      - name: Copy deploy script for EC2-B to EC2-A
+        run: |
+          scp -i ~/.ssh/picpay.pem -o StrictHostKeyChecking=no \
+            infra/deploy-ec2-b.sh \
+            $EC2_USER@${{ secrets.EC2_HOST }}:/tmp/deploy-ec2-b.sh
+
       - name: Relay middleware to EC2-B via EC2-A bastion and deploy
         run: |
           ssh -i ~/.ssh/picpay.pem -o StrictHostKeyChecking=no \
@@ -87,21 +93,15 @@ jobs:
             set -e
             EC2_B="${{ secrets.EC2_B_PRIVATE_IP }}"
 
-            echo "Copying images to EC2-B..."
+            echo "Copying images and deploy script to EC2-B..."
             scp -i ~/.ssh/picpay.pem -o StrictHostKeyChecking=no \
               /tmp/zookeeper.tar.gz /tmp/kafka.tar.gz /tmp/redis.tar.gz \
-              /tmp/docker-compose.ec2-b.yml \
+              /tmp/docker-compose.ec2-b.yml /tmp/deploy-ec2-b.sh \
               ubuntu@\$EC2_B:/tmp/
 
-            echo "Loading and starting middleware on EC2-B..."
+            echo "Running deploy script on EC2-B..."
             ssh -i ~/.ssh/picpay.pem -o StrictHostKeyChecking=no ubuntu@\$EC2_B \
-              "set -e && \
-               for img in zookeeper kafka redis; do \
-                 echo Loading \$img... && docker load < /tmp/\${img}.tar.gz; \
-               done && \
-               cp /tmp/docker-compose.ec2-b.yml /home/ubuntu/docker-compose.yml && \
-               EC2_B_PRIVATE_IP=\$(hostname -I | awk '{print \$1}') \
-               docker compose -f /home/ubuntu/docker-compose.yml up -d --remove-orphans"
+              "bash /tmp/deploy-ec2-b.sh"
           REMOTE
 
       - name: Wait for middleware to be ready
