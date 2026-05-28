@@ -58,42 +58,9 @@ jobs:
           mkdir -p ~/.ssh
           echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/picpay.pem
           chmod 600 ~/.ssh/picpay.pem
-          # Add EC2-A to known hosts
           ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts 2>/dev/null || true
 
-      - name: Copy WAS images to EC2-A
-        run: |
-          scp -i ~/.ssh/picpay.pem -o StrictHostKeyChecking=no \
-            /tmp/images/gateway.tar.gz \
-            /tmp/images/payment.tar.gz \
-            /tmp/images/billing.tar.gz \
-            /tmp/images/token.tar.gz \
-            /tmp/images/notification.tar.gz \
-            $EC2_USER@${{ secrets.EC2_HOST }}:/tmp/
-
-      - name: Copy docker-compose to EC2-A
-        run: |
-          scp -i ~/.ssh/picpay.pem -o StrictHostKeyChecking=no \
-            deploy/docker-compose.ec2-a.yml \
-            $EC2_USER@${{ secrets.EC2_HOST }}:/home/ubuntu/docker-compose.yml
-
-      - name: Deploy WAS services on EC2-A
-        run: |
-          ssh -i ~/.ssh/picpay.pem -o StrictHostKeyChecking=no \
-            $EC2_USER@${{ secrets.EC2_HOST }} bash <<'REMOTE'
-            set -e
-            for svc in gateway payment billing token notification; do
-              echo "Loading $svc image..."
-              docker load < /tmp/${svc}.tar.gz
-            done
-            echo "Starting WAS services..."
-            RDS_HOST=${{ secrets.RDS_HOST }} \
-            DB_PASSWORD=${{ secrets.DB_PASSWORD }} \
-            JWT_SECRET=${{ secrets.JWT_SECRET }} \
-            VAULT_AES_KEY=${{ secrets.VAULT_AES_KEY }} \
-            EC2_B_PRIVATE_IP=${{ secrets.EC2_B_PRIVATE_IP }} \
-            docker compose up -d --remove-orphans
-          REMOTE
+      # ── EC2-B FIRST: Redis/Kafka must be ready before WAS services start ──
 
       - name: Copy middleware images to EC2-A (for relay to EC2-B)
         run: |
@@ -135,10 +102,51 @@ jobs:
           INNER
           REMOTE
 
+      - name: Wait for middleware to be ready
+        run: |
+          echo "Waiting 30s for Redis/Kafka to start on EC2-B..."
+          sleep 30
+
+      # ── EC2-A SECOND: WAS services start after middleware is ready ──
+
+      - name: Copy WAS images to EC2-A
+        run: |
+          scp -i ~/.ssh/picpay.pem -o StrictHostKeyChecking=no \
+            /tmp/images/gateway.tar.gz \
+            /tmp/images/payment.tar.gz \
+            /tmp/images/billing.tar.gz \
+            /tmp/images/token.tar.gz \
+            /tmp/images/notification.tar.gz \
+            $EC2_USER@${{ secrets.EC2_HOST }}:/tmp/
+
+      - name: Copy docker-compose to EC2-A
+        run: |
+          scp -i ~/.ssh/picpay.pem -o StrictHostKeyChecking=no \
+            deploy/docker-compose.ec2-a.yml \
+            $EC2_USER@${{ secrets.EC2_HOST }}:/home/ubuntu/docker-compose.yml
+
+      - name: Deploy WAS services on EC2-A
+        run: |
+          ssh -i ~/.ssh/picpay.pem -o StrictHostKeyChecking=no \
+            $EC2_USER@${{ secrets.EC2_HOST }} bash <<'REMOTE'
+            set -e
+            for svc in gateway payment billing token notification; do
+              echo "Loading $svc image..."
+              docker load < /tmp/${svc}.tar.gz
+            done
+            echo "Starting WAS services..."
+            RDS_HOST=${{ secrets.RDS_HOST }} \
+            DB_PASSWORD=${{ secrets.DB_PASSWORD }} \
+            JWT_SECRET=${{ secrets.JWT_SECRET }} \
+            VAULT_AES_KEY=${{ secrets.VAULT_AES_KEY }} \
+            EC2_B_PRIVATE_IP=${{ secrets.EC2_B_PRIVATE_IP }} \
+            docker compose up -d --remove-orphans
+          REMOTE
+
       - name: Health check
         run: |
-          echo "Waiting 40s for services to start..."
-          sleep 40
+          echo "Waiting 60s for WAS services to start..."
+          sleep 60
           STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
             http://${{ secrets.EC2_HOST }}:8080/actuator/health)
           if [ "$STATUS" != "200" ]; then
