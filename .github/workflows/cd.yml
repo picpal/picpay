@@ -133,6 +133,9 @@ jobs:
             -o ServerAliveInterval=30 -o ServerAliveCountMax=20 \
             $EC2_USER@${{ secrets.EC2_HOST }} bash <<'REMOTE'
             set -e
+            echo "Stopping old containers to free memory before loading new images..."
+            docker compose -f /home/ubuntu/docker-compose.yml down 2>/dev/null || \
+              docker stop $(docker ps -q) 2>/dev/null || true
             echo "Cleaning up old Docker images..."
             docker system prune -f
             for svc in gateway payment billing token notification; do
