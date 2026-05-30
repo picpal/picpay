@@ -1,6 +1,12 @@
 .git
 .gradle
 .idea
-**/build
+**/build/classes
+**/build/generated
+**/build/generated-sources
+**/build/kotlin
+**/build/reports
+**/build/resources
+**/build/tmp
 **/out
 **/.DS_Store
