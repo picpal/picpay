@@ -130,8 +130,11 @@ jobs:
       - name: Deploy WAS services on EC2-A
         run: |
           ssh -i ~/.ssh/picpay.pem -o StrictHostKeyChecking=no \
+            -o ServerAliveInterval=30 -o ServerAliveCountMax=20 \
             $EC2_USER@${{ secrets.EC2_HOST }} bash <<'REMOTE'
             set -e
+            echo "Cleaning up old Docker images..."
+            docker system prune -f
             for svc in gateway payment billing token notification; do
               echo "Loading $svc image..."
               docker load < /tmp/${svc}.tar.gz
