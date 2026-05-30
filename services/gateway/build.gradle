@@ -2,6 +2,8 @@ plugins {
     id 'org.springframework.boot'
 }
 
+jar { enabled = false }
+
 dependencies {
     implementation(project(':common')) {
         exclude group: 'org.springframework.boot', module: 'spring-boot-starter-web'
