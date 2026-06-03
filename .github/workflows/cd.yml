@@ -106,8 +106,20 @@ jobs:
 
       - name: Wait for middleware to be ready
         run: |
-          echo "Waiting 30s for Redis/Kafka to start on EC2-B..."
-          sleep 30
+          echo "Waiting for Kafka on EC2-B to be ready (up to 3min)..."
+          for i in $(seq 1 18); do
+            if ssh -i ~/.ssh/picpay.pem -o StrictHostKeyChecking=no \
+              -o ConnectTimeout=5 $EC2_USER@${{ secrets.EC2_HOST }} \
+              "ssh -i ~/.ssh/picpay.pem -o StrictHostKeyChecking=no \
+               -o ConnectTimeout=5 ubuntu@${{ secrets.EC2_B_PRIVATE_IP }} \
+               'docker exec kafka kafka-topics --bootstrap-server localhost:9092 --list' \
+               2>/dev/null" 2>/dev/null; then
+              echo "Kafka ready after ~$((i*10))s"
+              break
+            fi
+            echo "Attempt $i/18: Kafka not ready, retrying in 10s..."
+            sleep 10
+          done
 
       # ── EC2-A SECOND: WAS services start after middleware is ready ──
 
@@ -153,12 +165,16 @@ jobs:
 
       - name: Health check
         run: |
-          echo "Waiting 60s for WAS services to start..."
-          sleep 60
-          STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
-            http://${{ secrets.EC2_HOST }}:8080/actuator/health)
-          if [ "$STATUS" != "200" ]; then
-            echo "Health check failed: HTTP $STATUS"
-            exit 1
-          fi
-          echo "Health check passed: HTTP $STATUS"
+          echo "Waiting for WAS services to be ready (up to 5min)..."
+          for i in $(seq 1 30); do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 5 \
+              http://${{ secrets.EC2_HOST }}:8080/actuator/health 2>/dev/null)
+            if [ "$STATUS" = "200" ]; then
+              echo "Health check passed after ~$((i*10))s: HTTP $STATUS"
+              exit 0
+            fi
+            echo "Attempt $i/30: HTTP ${STATUS:-timeout}, retrying in 10s..."
+            sleep 10
+          done
+          echo "Health check failed after 5 minutes"
+          exit 1
